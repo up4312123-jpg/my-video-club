@@ -32,15 +32,24 @@
 </head>
 <body>
 <div class="container">
-  <!-- 登入與註冊區塊 -->
+<!-- 登入與註冊區塊 -->
   <div id="authBox" class="card" style="max-width: 420px; margin: 40px auto;">
     <h2 id="authTitle">會員登入</h2>
     <input type="text" id="authUsername" placeholder="請輸入會員帳號名稱">
     <input type="password" id="authPassword" placeholder="請輸入密碼">
+    
+    <div id="rememberMeBox" style="margin-bottom: 12px; display: flex; align-items: center;">
+      <input type="checkbox" id="rememberMeCheckbox" style="width: auto; display: inline-block; margin: 0 8px 0 0; cursor: pointer;">
+      <label for="rememberMeCheckbox" style="cursor: pointer; font-size: 14px; color: #333;">記住登入帳號與密碼</label>
+    </div>
+
     <div id="registerExtraFields" class="hidden">
       <input type="text" id="authNtfy" placeholder="手機 ntfy App 訂閱頻道名稱 (選填)">
       <small style="color:#666; display:block; margin-bottom:10px;">* 填寫後，已配對的會員即可透過手機推播呼叫你</small>
     </div>
+    <button id="authSubmitBtn" class="btn-primary" onclick="submitAuth()">登入大廳</button>
+    <button class="btn-secondary" onclick="toggleAuthMode()" id="toggleAuthBtn">沒有帳號？點此註冊</button>
+  </div>
     <button id="authSubmitBtn" class="btn-primary" onclick="submitAuth()">登入大廳</button>
     <button class="btn-secondary" onclick="toggleAuthMode()" id="toggleAuthBtn">沒有帳號？點此註冊</button>
   </div>
@@ -98,14 +107,25 @@
     ]
   };
 
+  // 網頁一打開時，檢查瀏覽器是否有儲存過帳號密碼
+  window.addEventListener('DOMContentLoaded', () => {
+    const savedUser = localStorage.getItem('videoClub_username');
+    const savedPass = localStorage.getItem('videoClub_password');
+    if (savedUser && savedPass) {
+      document.getElementById('authUsername').value = savedUser;
+      document.getElementById('authPassword').value = savedPass;
+      document.getElementById('rememberMeCheckbox').checked = true;
+    }
+  });
+
   function toggleAuthMode() {
     isRegisterMode = !isRegisterMode;
     document.getElementById('authTitle').innerText = isRegisterMode ? '註冊新會員' : '會員登入';
+    document.getElementById('rememberMeBox').classList.toggle('hidden', isRegisterMode);
     document.getElementById('registerExtraFields').classList.toggle('hidden', !isRegisterMode);
     document.getElementById('authSubmitBtn').innerText = isRegisterMode ? '確認註冊' : '登入大廳';
     document.getElementById('toggleAuthBtn').innerText = isRegisterMode ? '已有帳號？返回登入' : '沒有帳號？點此註冊';
   }
-
   function submitAuth() {
     const username = document.getElementById('authUsername').value;
     const password = document.getElementById('authPassword').value;
@@ -123,7 +143,17 @@
     toggleAuthMode();
   });
 
-  socket.on('loginSuccess', (user) => {
+ socket.on('loginSuccess', (user) => {
+    // 確認登入成功後，根據勾選狀態決定要「記住」還是「清除」帳號密碼
+    const shouldRemember = document.getElementById('rememberMeCheckbox').checked;
+    if (shouldRemember) {
+      localStorage.setItem('videoClub_username', document.getElementById('authUsername').value);
+      localStorage.setItem('videoClub_password', document.getElementById('authPassword').value);
+    } else {
+      localStorage.removeItem('videoClub_username');
+      localStorage.removeItem('videoClub_password');
+    }
+
     myUser = user;
     document.getElementById('authBox').classList.add('hidden');
     document.getElementById('mainBox').classList.remove('hidden');
