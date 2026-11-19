@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>五房制視訊大廳</title>
-  <script src="/socket.io/socket.io.js"></script>
+  <script src="https://socket.io"></script>
   <style>
     body { font-family: "Microsoft JhengHei", sans-serif; background: #f0f2f5; margin: 0; padding: 20px; }
     .container { max-width: 1100px; margin: auto; }
@@ -89,16 +89,7 @@
 </div>
 
 <script>
-  const socket = io({
-  transports: ['websocket', 'polling']
-});
-
-socket.on('connect_error', (err) => {
-  const statusEl = document.getElementById('connStatus');
-  if (statusEl) {
-    statusEl.innerText = '❌ 連線失敗：' + err.message;
-  }
-});
+  const socket = io();
   let myUser = null;
   let latestState = null;
   let localStream = null;
@@ -121,6 +112,14 @@ socket.on('connect_error', (err) => {
     }
   });
 
+  socket.on('connect_error', (err) => {
+    const statusEl = document.getElementById('connStatus');
+    if (statusEl) {
+      statusEl.innerText = '❌ 連線失敗：' + err.message;
+      statusEl.className = 'status-bar status-wait';
+    }
+  });
+
   socket.on('disconnect', () => {
     const statusEl = document.getElementById('connStatus');
     if (statusEl) {
@@ -138,13 +137,11 @@ socket.on('connect_error', (err) => {
 
   function enterLobby() {
     if (!socket.connected) {
-      return alert('伺服器還在喚醒連線中（約需 10~30 秒），請看到上方變成綠色「已成功連線」後再按一次！');
+      return alert('伺服器還在連線中，請等上方變成綠色提示後再按！');
     }
     const name = document.getElementById('nicknameInput').value;
     const ntfyTopic = document.getElementById('ntfyInput').value;
-    if (!name.trim()) {
-      return alert('請先輸入你的稱呼！');
-    }
+    if (!name.trim()) return alert('請先輸入你的稱呼！');
     socket.emit('quickLogin', { name, ntfyTopic });
   }
 
@@ -209,12 +206,11 @@ socket.on('connect_error', (err) => {
       document.getElementById('currentRoomTitle').innerText = `${curRoom.name} - 管理者：${curRoom.adminName}`;
       document.getElementById('roomMembersList').innerHTML = curRoom.members.map(m => `<span class="member-tag">${m.name}</span>`).join('');
     } else {
-      roomPanel.classList.add('hidden');
-      document.getElementById('myStatusDisplay').innerText = '目前位置：大廳';
-    }
-
-    const listDiv = document.getElementById('contactList');
-    listDiv.innerHTML = '';
+roomPanel.classList.add('hidden');
+document.getElementById('myStatusDisplay').innerText = '目前位置：大廳';
+}
+const listDiv = document.getElementById('contactList');
+listDiv.innerHTML = '';
 state.contactList.forEach(u => {
 if (u.name === myUser.name) return;
 const pairKey = [myUser.name, u.name].sort().join('_');
