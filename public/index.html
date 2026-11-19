@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>五房制視訊大廳 v2.0</title>
-  <script src="https://socket.io"></script>
+  <script src="/socket.io/socket.io.js"></script>
   <style>
     body { font-family: "Microsoft JhengHei", sans-serif; background: #f0f2f5; margin: 0; padding: 15px; }
     .container { max-width: 1100px; margin: auto; }
@@ -71,7 +71,10 @@
 </div>
 
 <script>
-  const socket = io();
+  if (typeof io === 'undefined') {
+  document.getElementById('connStatus').innerText = '❌ Socket.IO 腳本載入失敗，請檢查 Render 伺服器狀態';
+}
+const socket = io();
   let myUser = null, latestState = null, localStream = null, peerConnections = {};
   const rtcConfig = {
     iceServers: [
