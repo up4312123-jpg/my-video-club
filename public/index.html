@@ -89,7 +89,16 @@
 </div>
 
 <script>
-  const socket = io();
+  const socket = io({
+  transports: ['websocket', 'polling']
+});
+
+socket.on('connect_error', (err) => {
+  const statusEl = document.getElementById('connStatus');
+  if (statusEl) {
+    statusEl.innerText = '❌ 連線失敗：' + err.message;
+  }
+});
   let myUser = null;
   let latestState = null;
   let localStream = null;
