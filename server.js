@@ -14,13 +14,12 @@ app.use(express.static('public'));
 const MAX_TOTAL_USERS = 20;
 const DB_FILE = path.join(__dirname, 'database.json');
 
-// 讀取或初始化本地 JSON 資料庫
 function loadDB() {
   if (!fs.existsSync(DB_FILE)) {
     const initialData = {
-      users: {},          // username -> { username, passwordHash, ntfyTopic }
-      confirmedPairs: [], // ["userA_userB", ...]
-      pendingPairs: {}    // "userA_userB" -> { pin, setter }
+      users: {},
+      confirmedPairs: [],
+      pendingPairs: {}
     };
     fs.writeFileSync(DB_FILE, JSON.stringify(initialData, null, 2));
     return initialData;
@@ -34,7 +33,6 @@ function saveDB(data) {
 
 let db = loadDB();
 
-// 初始化 5 個房間
 let rooms = {};
 for (let i = 1; i <= 5; i++) {
   rooms[i] = {
@@ -46,7 +44,7 @@ for (let i = 1; i <= 5; i++) {
   };
 }
 
-let onlineUsers = {}; // socketId -> { id, name, ntfyTopic, currentRoom }
+let onlineUsers = {};
 
 function getPairKey(name1, name2) {
   return [name1, name2].sort().join('_');
@@ -62,7 +60,6 @@ function getTotalInRoomUsers() {
 
 function broadcastState() {
   const onlineNames = new Set(Object.values(onlineUsers).map(u => u.name));
-  // 整理所有已註冊會員清單，並標註目前是否線上
   const allRegisteredUsers = Object.values(db.users).map(u => ({
     name: u.username,
     isOnline: onlineNames.has(u.username)
@@ -105,7 +102,7 @@ function handleLeaveRoom(socketId, nextAdminId = null) {
       room.adminName = nextAdmin.name;
       io.to(nextAdmin.id).emit('notification', `你已被指定為【${room.name}】的新管理者！`);
     } else {
-      const nextAdmin = room.members;
+      const nextAdmin = room.members[0];
       room.adminId = nextAdmin.id;
       room.adminName = nextAdmin.name;
       io.to(nextAdmin.id).emit('notification', `原管理者已離開，系統自動由你接任【${room.name}】管理者！`);
@@ -116,7 +113,6 @@ function handleLeaveRoom(socketId, nextAdminId = null) {
 }
 
 io.on('connection', (socket) => {
-  // 1. 新會員註冊
   socket.on('register', ({ username, password, ntfyTopic }) => {
     const cleanName = (username || '').trim();
     if (!cleanName || !password) {
@@ -136,7 +132,6 @@ io.on('connection', (socket) => {
     socket.emit('registerSuccess', '註冊成功！請使用剛設定的帳號密碼登入。');
   });
 
-  // 2. 會員正式登入
   socket.on('login', ({ username, password }) => {
     const cleanName = (username || '').trim();
     const record = db.users[cleanName];
@@ -144,7 +139,6 @@ io.on('connection', (socket) => {
       return socket.emit('authError', '會員名稱或密碼錯誤！');
     }
 
-    // 防止同帳號重複多開登入
     const alreadyOnline = Object.values(onlineUsers).find(u => u.name === cleanName);
     if (alreadyOnline) {
       return socket.emit('authError', '此帳號目前已在其他視窗登入中！');
@@ -160,7 +154,6 @@ io.on('connection', (socket) => {
     broadcastState();
   });
 
-  // 更新自己的 ntfy 頻道名稱
   socket.on('updateNtfy', (newTopic) => {
     const user = onlineUsers[socket.id];
     if (!user || !db.users[user.name]) return;
@@ -172,7 +165,6 @@ io.on('connection', (socket) => {
     broadcastState();
   });
 
-  // 3. 申請或進入房間
   socket.on('requestJoinRoom', (roomId) => {
     const user = onlineUsers[socket.id];
     const room = rooms[roomId];
@@ -202,7 +194,6 @@ io.on('connection', (socket) => {
     }
   });
 
-  // 4. 管理者審核回應
   socket.on('adminDecision', ({ roomId, applicantId, approved }) => {
     const room = rooms[roomId];
     const applicant = onlineUsers[applicantId];
@@ -222,7 +213,6 @@ io.on('connection', (socket) => {
     broadcastState();
   });
 
-  // 5. WebRTC 視訊信令轉發
   socket.on('webrtcOffer', ({ targetId, offer }) => {
     const sender = onlineUsers[socket.id];
     io.to(targetId).emit('webrtcOffer', {
@@ -244,7 +234,6 @@ io.on('connection', (socket) => {
     handleLeaveRoom(socket.id, nextAdminId);
   });
 
-  // 6. 永久性四位數密碼配對
   socket.on('setupCallPair', ({ targetName, pin }) => {
     const user = onlineUsers[socket.id];
     if (!user || !db.users[targetName]) return;
@@ -277,7 +266,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // 7. 發送 ntfy 手機/平板呼叫通知（支援呼叫離線中的已註冊會員）
+  // 修復版：支援中文頻道名稱編碼，並回報具體錯誤訊息
   socket.on('triggerNtfyCall', async ({ targetName }) => {
     const user = onlineUsers[socket.id];
     const targetRecord = db.users[targetName];
@@ -293,18 +282,24 @@ io.on('connection', (socket) => {
     }
 
     try {
-      await fetch(`https://ntfy.sh{targetRecord.ntfyTopic}`, {
+      const encodedTopic = encodeURIComponent(targetRecord.ntfyTopic);
+      const response = await fetch(`https://ntfy.sh{encodedTopic}`, {
         method: 'POST',
         body: `會員【${user.name}】正在視訊網站呼叫你！快打開網頁加入吧！`,
         headers: {
-          'Title': '視訊網站來電呼叫',
+          'Title': 'Video Call Alert',
           'Priority': 'high',
           'Tags': 'telephone_receiver'
         }
       });
+
+      if (!response.ok) {
+        throw new Error(`HTTP 狀態碼 ${response.status}`);
+      }
       socket.emit('notification', `已成功發送手機/平板推播通知給【${targetName}】！`);
     } catch (err) {
-      socket.emit('notification', '推播發送失敗，請檢查網路連線。');
+      console.error('ntfy 推播失敗:', err);
+      socket.emit('notification', `推播發送失敗（原因：${err.message}），請確認對方的 ntfy 頻道名稱是否為純英文數字！`);
     }
   });
 

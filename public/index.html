@@ -7,49 +7,47 @@
   <script src="/socket.io/socket.io.js"></script>
   <style>
     body { font-family: "Microsoft JhengHei", sans-serif; background: #f0f2f5; margin: 0; padding: 20px; }
-    .container { max-width: 1000px; margin: auto; }
+    .container { max-width: 1100px; margin: auto; }
     .card { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 20px; }
-    .rooms-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 15px; }
+    .rooms-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; }
     .room-card { border: 2px solid #e0e0e0; border-radius: 8px; padding: 15px; background: #fafafa; }
     .room-card.active { border-color: #4CAF50; background: #f1f8e9; }
-    button { padding: 8px 14px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; margin-right: 5px; }
+    button { padding: 8px 14px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; margin-right: 5px; margin-bottom: 5px; }
     .btn-primary { background: #1976d2; color: white; }
     .btn-success { background: #388e3c; color: white; }
     .btn-danger { background: #d32f2f; color: white; }
     .btn-warning { background: #f57c00; color: white; }
     .btn-secondary { background: #607d8b; color: white; }
-    input { padding: 8px; border: 1px solid #ccc; border-radius: 5px; margin-bottom: 10px; width: 250px; display: block; }
-    .hidden { display: none; }
+    input[type="text"], input[type="password"] { padding: 8px; border: 1px solid #ccc; border-radius: 5px; margin-bottom: 10px; width: 250px; display: block; }
+    .hidden { display: none !important; }
     .member-tag { display: inline-block; background: #e3f2fd; padding: 4px 10px; border-radius: 15px; margin: 3px; font-size: 14px; }
     .badge-online { background: #e8f5e9; color: #2e7d32; padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: bold; }
     .badge-offline { background: #eeeeee; color: #757575; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
     .badge-paired { background: #fff3e0; color: #ef6c00; padding: 2px 8px; border-radius: 10px; font-size: 12px; margin-left: 5px; }
-    .video-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 15px; margin: 15px 0; background: #1e1e1e; padding: 15px; border-radius: 8px; }
-    .video-wrapper { position: relative; background: #000; border-radius: 8px; overflow: hidden; aspect-ratio: 4/3; }
-    .video-wrapper video { width: 100%; height: 100%; object-fit: cover; }
-    .video-label { position: absolute; bottom: 8px; left: 8px; background: rgba(0,0,0,0.65); color: white; padding: 3px 10px; border-radius: 4px; font-size: 13px; }
+    /* 多人獨立視訊格子排版 */
+    .video-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 15px; margin: 15px 0; background: #1e1e1e; padding: 15px; border-radius: 8px; }
+    .video-wrapper { position: relative; background: #000; border-radius: 8px; overflow: hidden; aspect-ratio: 4/3; border: 2px solid #444; }
+    .video-wrapper video { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .video-label { position: absolute; bottom: 8px; left: 8px; background: rgba(0,0,0,0.7); color: white; padding: 4px 10px; border-radius: 4px; font-size: 13px; font-weight: bold; }
   </style>
 </head>
 <body>
 <div class="container">
-<!-- 登入與註冊區塊 -->
+  <!-- 登入與註冊區塊 -->
   <div id="authBox" class="card" style="max-width: 420px; margin: 40px auto;">
     <h2 id="authTitle">會員登入</h2>
     <input type="text" id="authUsername" placeholder="請輸入會員帳號名稱">
     <input type="password" id="authPassword" placeholder="請輸入密碼">
     
     <div id="rememberMeBox" style="margin-bottom: 12px; display: flex; align-items: center;">
-      <input type="checkbox" id="rememberMeCheckbox" style="width: auto; display: inline-block; margin: 0 8px 0 0; cursor: pointer;">
+      <input type="checkbox" id="rememberMeCheckbox" style="margin: 0 8px 0 0; cursor: pointer;">
       <label for="rememberMeCheckbox" style="cursor: pointer; font-size: 14px; color: #333;">記住登入帳號與密碼</label>
     </div>
 
     <div id="registerExtraFields" class="hidden">
-      <input type="text" id="authNtfy" placeholder="手機 ntfy App 訂閱頻道名稱 (選填)">
-      <small style="color:#666; display:block; margin-bottom:10px;">* 填寫後，已配對的會員即可透過手機推播呼叫你</small>
+      <input type="text" id="authNtfy" placeholder="手機 ntfy 訂閱頻道 (建議純英文數字)">
+      <small style="color:#666; display:block; margin-bottom:10px;">* 建議設定純英文加數字（例如：call_chen_8899）</small>
     </div>
-    <button id="authSubmitBtn" class="btn-primary" onclick="submitAuth()">登入大廳</button>
-    <button class="btn-secondary" onclick="toggleAuthMode()" id="toggleAuthBtn">沒有帳號？點此註冊</button>
-  </div>
     <button id="authSubmitBtn" class="btn-primary" onclick="submitAuth()">登入大廳</button>
     <button class="btn-secondary" onclick="toggleAuthMode()" id="toggleAuthBtn">沒有帳號？點此註冊</button>
   </div>
@@ -71,6 +69,7 @@
     <div id="currentRoomPanel" class="card hidden" style="border: 2px solid #1976d2;">
       <h3 id="currentRoomTitle">你正在：房間 X</h3>
       <p>房間內成員：<span id="roomMembersList"></span></p>
+      <!-- 每個人獨立的視訊框會動態加在這裡 -->
       <div id="videoGrid" class="video-grid"></div>
       <div style="margin-top: 10px;">
         <button id="toggleMicBtn" class="btn-secondary" onclick="toggleMic()">🎤 麥克風：開啟</button>
@@ -100,14 +99,25 @@
   let latestState = null;
   let localStream = null;
   let peerConnections = {};
+
+  // 加入免費 STUN 與 TURN 中繼伺服器，確保不同網路(手機4G/家用Wi-Fi)都能順利傳送影像與聲音
   const rtcConfig = {
     iceServers: [
       { urls: 'stun:://google.com' },
-      { urls: 'stun:://google.com' }
+      { urls: 'stun:://google.com' },
+      {
+        urls: 'turn:openrelay.metered.ca:80',
+        username: 'openrelayproject',
+        credential: 'openrelayproject'
+      },
+      {
+        urls: 'turn:openrelay.metered.ca:443',
+        username: 'openrelayproject',
+        credential: 'openrelayproject'
+      }
     ]
   };
 
-  // 網頁一打開時，檢查瀏覽器是否有儲存過帳號密碼
   window.addEventListener('DOMContentLoaded', () => {
     const savedUser = localStorage.getItem('videoClub_username');
     const savedPass = localStorage.getItem('videoClub_password');
@@ -126,6 +136,7 @@
     document.getElementById('authSubmitBtn').innerText = isRegisterMode ? '確認註冊' : '登入大廳';
     document.getElementById('toggleAuthBtn').innerText = isRegisterMode ? '已有帳號？返回登入' : '沒有帳號？點此註冊';
   }
+
   function submitAuth() {
     const username = document.getElementById('authUsername').value;
     const password = document.getElementById('authPassword').value;
@@ -143,8 +154,7 @@
     toggleAuthMode();
   });
 
- socket.on('loginSuccess', (user) => {
-    // 確認登入成功後，根據勾選狀態決定要「記住」還是「清除」帳號密碼
+  socket.on('loginSuccess', (user) => {
     const shouldRemember = document.getElementById('rememberMeCheckbox').checked;
     if (shouldRemember) {
       localStorage.setItem('videoClub_username', document.getElementById('authUsername').value);
@@ -161,13 +171,12 @@
   });
 
   function changeMyNtfy() {
-    const topic = prompt('請輸入你手機 ntfy App 訂閱的頻道名稱：', myUser.ntfyTopic || '');
+    const topic = prompt('請輸入你手機 ntfy App 訂閱的頻道名稱（建議使用純英文加數字）：', myUser.ntfyTopic || '');
     if (topic !== null) {
       socket.emit('updateNtfy', topic);
     }
   }
-
-  socket.on('stateUpdate', (state) => {
+socket.on('stateUpdate', (state) => {
     latestState = state;
     document.getElementById('totalUsersDisplay').innerText = `${state.totalUsers} / ${state.maxUsers}`;
     const me = state.onlineUsers.find(u => u.id === myUser.id);
@@ -216,7 +225,6 @@
       document.getElementById('myStatusDisplay').innerText = '目前位置：大廳';
     }
 
-    // 渲染所有已註冊會員（含離線會員與配對狀態）
     const usersDiv = document.getElementById('allUsersList');
     usersDiv.innerHTML = '';
     state.allRegisteredUsers.forEach(u => {
@@ -239,6 +247,7 @@
   function joinRoom(roomId) {
     socket.emit('requestJoinRoom', roomId);
   }
+
   async function startLocalMedia() {
     if (localStream) return localStream;
     try {
@@ -266,8 +275,17 @@
     document.getElementById('videoGrid').innerHTML = '';
   }
 
+  // 修復版：為每位房間成員建立獨立的 video 框，並確保自動播放影像與聲音
   function addVideoBox(id, stream, labelText, isMuted = false) {
-    if (document.getElementById(`video-wrap-${id}`)) return;
+    let existingWrap = document.getElementById(`video-wrap-${id}`);
+    if (existingWrap) {
+      const existingVideo = existingWrap.querySelector('video');
+      if (existingVideo && existingVideo.srcObject !== stream) {
+        existingVideo.srcObject = stream;
+      }
+      return;
+    }
+
     const grid = document.getElementById('videoGrid');
     const wrapper = document.createElement('div');
     wrapper.className = 'video-wrapper';
@@ -277,7 +295,7 @@
     video.srcObject = stream;
     video.autoplay = true;
     video.playsInline = true;
-    if (isMuted) video.muted = true;
+    video.muted = isMuted; // 只有自己的畫面靜音，對方的畫面開啟聲音
 
     const label = document.createElement('div');
     label.className = 'video-label';
@@ -286,6 +304,9 @@
     wrapper.appendChild(video);
     wrapper.appendChild(label);
     grid.appendChild(wrapper);
+
+    // 強制觸發播放（解決部分手機瀏覽器阻擋聲音或畫面自動播放的問題）
+    video.play().catch(e => console.log('自動播放等待互動:', e));
   }
 
   function removeVideoBox(id) {
@@ -294,6 +315,9 @@
   }
 
   function createPeerConnection(targetId, targetName) {
+    if (peerConnections[targetId]) {
+      peerConnections[targetId].close();
+    }
     const pc = new RTCPeerConnection(rtcConfig);
     peerConnections[targetId] = pc;
 
@@ -307,8 +331,11 @@
       }
     };
 
+    // 關鍵修復：正確取得對方的第 0 條媒體串流 event.streams[0]
     pc.ontrack = (event) => {
-      addVideoBox(targetId, event.streams, targetName, false);
+      if (event.streams && event.streams[0]) {
+        addVideoBox(targetId, event.streams[0], targetName, false);
+      }
     };
 
     return pc;
@@ -342,8 +369,12 @@
 
   socket.on('webrtcIceCandidate', async ({ senderId, candidate }) => {
     const pc = peerConnections[senderId];
-    if (pc) {
-      await pc.addIceCandidate(new RTCIceCandidate(candidate));
+    if (pc && candidate) {
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (e) {
+        console.error('ICE Candidate 加入失敗:', e);
+      }
     }
   });
 
@@ -355,9 +386,10 @@
     removeVideoBox(leftSocketId);
   });
 
+  // 關鍵修復：正確取得 [0] 音軌與視訊軌
   function toggleMic() {
     if (!localStream) return;
-    const audioTrack = localStream.getAudioTracks();
+    const audioTrack = localStream.getAudioTracks()[0];
     if (audioTrack) {
       audioTrack.enabled = !audioTrack.enabled;
       document.getElementById('toggleMicBtn').innerText = audioTrack.enabled ? '🎤 麥克風：開啟' : '🔇 麥克風：靜音';
@@ -366,7 +398,7 @@
 
   function toggleCam() {
     if (!localStream) return;
-    const videoTrack = localStream.getVideoTracks();
+    const videoTrack = localStream.getVideoTracks()[0];
     if (videoTrack) {
       videoTrack.enabled = !videoTrack.enabled;
       document.getElementById('toggleCamBtn').innerText = videoTrack.enabled ? '📷 鏡頭：開啟' : '🚫 鏡頭：關閉';
@@ -423,8 +455,5 @@
   });
 
   socket.on('notification', (msg) => {
-    alert(msg);
-  });
-</script>
-</body>
-</html>
+alert(msg);
+});
