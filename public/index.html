@@ -28,13 +28,17 @@
     .video-wrapper { position: relative; background: #000; border-radius: 8px; overflow: hidden; aspect-ratio: 4/3; border: 2px solid #555; }
     .video-wrapper video { width: 100%; height: 100%; object-fit: cover; display: block; }
     .video-label { position: absolute; bottom: 8px; left: 8px; background: rgba(0,0,0,0.75); color: white; padding: 4px 10px; border-radius: 4px; font-size: 13px; font-weight: bold; }
+    .status-bar { padding: 8px 12px; border-radius: 6px; margin-bottom: 15px; font-size: 14px; font-weight: bold; text-align: center; }
+    .status-wait { background: #fff3e0; color: #e65100; }
+    .status-ok { background: #e8f5e9; color: #2e7d32; }
   </style>
 </head>
 <body>
 <div class="container">
-  <!-- 免註冊快速登入畫面 -->
   <div id="loginBox" class="card" style="max-width: 420px; margin: 40px auto;">
     <h2>進入視訊大廳</h2>
+    <div id="connStatus" class="status-bar status-wait">⏳ 正在連線至伺服器，請稍候...</div>
+    
     <label style="font-weight:bold; display:block; margin-bottom:5px;">1. 你的稱呼（必填）：</label>
     <input type="text" id="nicknameInput" placeholder="隨便輸入一個稱呼 (例: 小明)">
     
@@ -46,15 +50,14 @@
       <label for="rememberCheckbox" style="cursor: pointer; font-size: 14px;">記住我的稱呼與 ntfy 頻道</label>
     </div>
 
-    <button class="btn-primary" style="width:100%; padding:12px; font-size:16px;" onclick="enterLobby()">立即進入大廳</button>
+    <button id="enterBtn" class="btn-primary" style="width:100%; padding:12px; font-size:16px;" onclick="enterLobby()">立即進入大廳</button>
   </div>
 
-  <!-- 主大廳與房間系統 -->
   <div id="mainBox" class="hidden">
     <div class="card" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
       <div>
         <strong>歡迎，<span id="myNameDisplay"></span></strong> | 
-        全站視訊人數：<span id="totalUsersDisplay" style="color:#d32f2f; font-weight:bold;">0 / 20</span>
+        全站視訊總人數：<span id="totalUsersDisplay" style="color:#d32f2f; font-weight:bold;">0 / 20</span>
       </div>
       <div>
         <span id="myStatusDisplay" style="color:#1976d2; font-weight:bold; margin-right:15px;">目前位置：大廳</span>
@@ -62,7 +65,6 @@
       </div>
     </div>
 
-    <!-- 房間內獨立視訊畫面區 -->
     <div id="currentRoomPanel" class="card hidden" style="border: 2px solid #1976d2;">
       <h3 id="currentRoomTitle">你正在：房間 X</h3>
       <p>房間內成員：<span id="roomMembersList"></span></p>
@@ -102,6 +104,22 @@
     ]
   };
 
+  socket.on('connect', () => {
+    const statusEl = document.getElementById('connStatus');
+    if (statusEl) {
+      statusEl.innerText = '✅ 已成功連線至伺服器，可以進入大廳！';
+      statusEl.className = 'status-bar status-ok';
+    }
+  });
+
+  socket.on('disconnect', () => {
+    const statusEl = document.getElementById('connStatus');
+    if (statusEl) {
+      statusEl.innerText = '⚠️ 與伺服器連線中斷，正在重新連線...';
+      statusEl.className = 'status-bar status-wait';
+    }
+  });
+
   window.addEventListener('DOMContentLoaded', () => {
     const savedName = localStorage.getItem('vc_nickname');
     const savedNtfy = localStorage.getItem('vc_ntfy');
@@ -110,8 +128,14 @@
   });
 
   function enterLobby() {
+    if (!socket.connected) {
+      return alert('伺服器還在喚醒連線中（約需 10~30 秒），請看到上方變成綠色「已成功連線」後再按一次！');
+    }
     const name = document.getElementById('nicknameInput').value;
     const ntfyTopic = document.getElementById('ntfyInput').value;
+    if (!name.trim()) {
+      return alert('請先輸入你的稱呼！');
+    }
     socket.emit('quickLogin', { name, ntfyTopic });
   }
 
@@ -182,19 +206,14 @@
 
     const listDiv = document.getElementById('contactList');
     listDiv.innerHTML = '';
-    state.contactList.forEach(u => {
-      if (u.name === myUser.name) return;
-      const pairKey = [myUser.name, u.name].sort().join('_');
-      const isPaired = state.confirmedPairs.includes(pairKey);
-      const statusBadge = u.isOnline ? `<span class="badge-online">線上</span>` : `<span class="badge-offline">離線</span>`;
-      const pairBadge = isPaired ? `<span class="badge-paired">✓ 已配對</span>` : '';
-      const callBtn = u.ntfyTopic ? `<button class="btn-primary" style="margin-left:10px;" onclick="callUser('${u.name}')">📲 手機推播呼叫</button>` : `<span style="color:#999; font-size:13px; margin-left:10px;">(未設推播)</span>`;
-      listDiv.innerHTML += `
-        <div style="margin-bottom:10px; padding-bottom:8px; border-bottom:1px solid #eee;">
-          <span>👤 <strong>${u.name}</strong> ${statusBadge} ${pairBadge}</span>
-          ${callBtn}
-${!isPaired && u.ntfyTopic ? <button class="btn-warning" onclick="openPairDialog('${u.name}')">🔑 設定4位數配對密碼</button> : ''}
-`;
+state.contactList.forEach(u => {
+if (u.name === myUser.name) return;
+const pairKey = [myUser.name, u.name].sort().join('_');
+const isPaired = state.confirmedPairs.includes(pairKey);
+const statusBadge = u.isOnline ? <span class="badge-online">線上</span> : <span class="badge-offline">離線</span>;
+const pairBadge = isPaired ? <span class="badge-paired">✓ 已配對</span> : '';
+const callBtn = u.ntfyTopic ? <button class="btn-primary" style="margin-left:10px;" onclick="callUser('${u.name}')">📲 手機推播呼叫</button> : <span style="color:#999; font-size:13px; margin-left:10px;">(未設推播)</span>;
+listDiv.innerHTML += <div style="margin-bottom:10px; padding-bottom:8px; border-bottom:1px solid #eee;"> <span>👤 <strong>${u.name}</strong> ${statusBadge} ${pairBadge}</span> ${callBtn} ${!isPaired && u.ntfyTopic ?🔑 設定4位數配對密碼 : ''} </div>;
 });
 });
 function joinRoom(roomId) { socket.emit('requestJoinRoom', roomId); }
