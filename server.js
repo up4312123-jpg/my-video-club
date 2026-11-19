@@ -310,7 +310,7 @@ room.adminId = socket.id; room.adminName = user.name;
 room.members.push({ id: socket.id, name: user.name }); user.currentRoom = roomId;
 socket.emit('enteredRoom', { roomId, existingMembers: [] }); broadcastState();
 } else {
-socket.emit('notification', 已向管理者【${room.adminName}】發送申請...);
+socket.emit('notification', `已向管理者【${room.adminName}】發送申請...`);
 io.to(room.adminId).emit('joinRequestToAdmin', { roomId, applicantId: socket.id, applicantName: user.name });
 }
 });
