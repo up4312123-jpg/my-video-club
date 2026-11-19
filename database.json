@@ -1,0 +1,11 @@
+{
+  "users": {
+    "up4312123": {
+      "username": "up4312123",
+      "passwordHash": "$2b$10$0OcDgZDHVNV2MJnatbE.quaIiwMYNoeoKgGgKq.5EP7Ff20SF9Zj.",
+      "ntfyTopic": "Jiang_call_viewer"
+    }
+  },
+  "confirmedPairs": [],
+  "pendingPairs": {}
+}

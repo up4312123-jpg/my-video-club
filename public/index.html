@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>五房制會員視訊大廳</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    body { font-family: "Microsoft JhengHei", sans-serif; background: #f0f2f5; margin: 0; padding: 20px; }
+    .container { max-width: 1000px; margin: auto; }
+    .card { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 20px; }
+    .rooms-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 15px; }
+    .room-card { border: 2px solid #e0e0e0; border-radius: 8px; padding: 15px; background: #fafafa; }
+    .room-card.active { border-color: #4CAF50; background: #f1f8e9; }
+    button { padding: 8px 14px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; margin-right: 5px; }
+    .btn-primary { background: #1976d2; color: white; }
+    .btn-success { background: #388e3c; color: white; }
+    .btn-danger { background: #d32f2f; color: white; }
+    .btn-warning { background: #f57c00; color: white; }
+    .btn-secondary { background: #607d8b; color: white; }
+    input { padding: 8px; border: 1px solid #ccc; border-radius: 5px; margin-bottom: 10px; width: 250px; display: block; }
+    .hidden { display: none; }
+    .member-tag { display: inline-block; background: #e3f2fd; padding: 4px 10px; border-radius: 15px; margin: 3px; font-size: 14px; }
+    .badge-online { background: #e8f5e9; color: #2e7d32; padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: bold; }
+    .badge-offline { background: #eeeeee; color: #757575; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+    .badge-paired { background: #fff3e0; color: #ef6c00; padding: 2px 8px; border-radius: 10px; font-size: 12px; margin-left: 5px; }
+    .video-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 15px; margin: 15px 0; background: #1e1e1e; padding: 15px; border-radius: 8px; }
+    .video-wrapper { position: relative; background: #000; border-radius: 8px; overflow: hidden; aspect-ratio: 4/3; }
+    .video-wrapper video { width: 100%; height: 100%; object-fit: cover; }
+    .video-label { position: absolute; bottom: 8px; left: 8px; background: rgba(0,0,0,0.65); color: white; padding: 3px 10px; border-radius: 4px; font-size: 13px; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <!-- 登入與註冊區塊 -->
+  <div id="authBox" class="card" style="max-width: 420px; margin: 40px auto;">
+    <h2 id="authTitle">會員登入</h2>
+    <input type="text" id="authUsername" placeholder="請輸入會員帳號名稱">
+    <input type="password" id="authPassword" placeholder="請輸入密碼">
+    <div id="registerExtraFields" class="hidden">
+      <input type="text" id="authNtfy" placeholder="手機 ntfy App 訂閱頻道名稱 (選填)">
+      <small style="color:#666; display:block; margin-bottom:10px;">* 填寫後，已配對的會員即可透過手機推播呼叫你</small>
+    </div>
+    <button id="authSubmitBtn" class="btn-primary" onclick="submitAuth()">登入大廳</button>
+    <button class="btn-secondary" onclick="toggleAuthMode()" id="toggleAuthBtn">沒有帳號？點此註冊</button>
+  </div>
+
+  <!-- 主大廳與房間系統 -->
+  <div id="mainBox" class="hidden">
+    <div class="card" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+      <div>
+        <strong>歡迎，<span id="myNameDisplay"></span></strong> | 
+        全站視訊總人數：<span id="totalUsersDisplay" style="color:#d32f2f; font-weight:bold;">0 / 20</span>
+      </div>
+      <div>
+        <span id="myStatusDisplay" style="color:#1976d2; font-weight:bold; margin-right:15px;">目前位置：大廳</span>
+        <button class="btn-secondary" onclick="changeMyNtfy()">⚙️ 設定我的 ntfy 頻道</button>
+      </div>
+    </div>
+
+    <!-- 目前所在房間視訊面板 -->
+    <div id="currentRoomPanel" class="card hidden" style="border: 2px solid #1976d2;">
+      <h3 id="currentRoomTitle">你正在：房間 X</h3>
+      <p>房間內成員：<span id="roomMembersList"></span></p>
+      <div id="videoGrid" class="video-grid"></div>
+      <div style="margin-top: 10px;">
+        <button id="toggleMicBtn" class="btn-secondary" onclick="toggleMic()">🎤 麥克風：開啟</button>
+        <button id="toggleCamBtn" class="btn-secondary" onclick="toggleCam()">📷 鏡頭：開啟</button>
+        <button class="btn-danger" onclick="initiateLeaveRoom()">🚪 離開房間</button>
+      </div>
+    </div>
+
+    <!-- 5 個房間列表 -->
+    <div class="card">
+      <h3>視訊房間列表（共 5 間）</h3>
+      <div id="roomsContainer" class="rooms-grid"></div>
+    </div>
+
+    <!-- 全體已註冊會員與 ntfy 呼叫名單 -->
+    <div class="card">
+      <h3>已註冊會員名單與手機呼叫（首次需雙方輸入相同四位數密碼綁定）</h3>
+      <div id="allUsersList"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const socket = io();
+  let isRegisterMode = false;
+  let myUser = null;
+  let latestState = null;
+  let localStream = null;
+  let peerConnections = {};
+  const rtcConfig = {
+    iceServers: [
+      { urls: 'stun:://google.com' },
+      { urls: 'stun:://google.com' }
+    ]
+  };
+
+  function toggleAuthMode() {
+    isRegisterMode = !isRegisterMode;
+    document.getElementById('authTitle').innerText = isRegisterMode ? '註冊新會員' : '會員登入';
+    document.getElementById('registerExtraFields').classList.toggle('hidden', !isRegisterMode);
+    document.getElementById('authSubmitBtn').innerText = isRegisterMode ? '確認註冊' : '登入大廳';
+    document.getElementById('toggleAuthBtn').innerText = isRegisterMode ? '已有帳號？返回登入' : '沒有帳號？點此註冊';
+  }
+
+  function submitAuth() {
+    const username = document.getElementById('authUsername').value;
+    const password = document.getElementById('authPassword').value;
+    if (isRegisterMode) {
+      const ntfyTopic = document.getElementById('authNtfy').value;
+      socket.emit('register', { username, password, ntfyTopic });
+    } else {
+      socket.emit('login', { username, password });
+    }
+  }
+
+  socket.on('authError', (msg) => alert(msg));
+  socket.on('registerSuccess', (msg) => {
+    alert(msg);
+    toggleAuthMode();
+  });
+
+  socket.on('loginSuccess', (user) => {
+    myUser = user;
+    document.getElementById('authBox').classList.add('hidden');
+    document.getElementById('mainBox').classList.remove('hidden');
+    document.getElementById('myNameDisplay').innerText = user.name;
+  });
+
+  function changeMyNtfy() {
+    const topic = prompt('請輸入你手機 ntfy App 訂閱的頻道名稱：', myUser.ntfyTopic || '');
+    if (topic !== null) {
+      socket.emit('updateNtfy', topic);
+    }
+  }
+
+  socket.on('stateUpdate', (state) => {
+    latestState = state;
+    document.getElementById('totalUsersDisplay').innerText = `${state.totalUsers} / ${state.maxUsers}`;
+    const me = state.onlineUsers.find(u => u.id === myUser.id);
+    if (me) myUser = me;
+
+    const roomsDiv = document.getElementById('roomsContainer');
+    roomsDiv.innerHTML = '';
+    const isFull = state.totalUsers >= state.maxUsers;
+
+    for (let i = 1; i <= 5; i++) {
+      const r = state.rooms[i];
+      const isEmpty = r.members.length === 0;
+      let btnHtml = '';
+
+      if (myUser.currentRoom === r.id) {
+        btnHtml = `<button class="btn-success" disabled>你在此房間中</button>`;
+      } else if (myUser.currentRoom !== null) {
+        btnHtml = `<button disabled>請先離開目前房間</button>`;
+      } else if (isFull) {
+        btnHtml = `<button disabled>全站已滿 (20/20)</button>`;
+      } else if (isEmpty) {
+        btnHtml = `<button class="btn-primary" onclick="joinRoom(${r.id})">進入空房 (成為管理者)</button>`;
+      } else {
+        btnHtml = `<button class="btn-warning" onclick="joinRoom(${r.id})">申請進入 (需管理者同意)</button>`;
+      }
+
+      roomsDiv.innerHTML += `
+        <div class="room-card ${isEmpty ? '' : 'active'}">
+          <h4>${r.name}</h4>
+          <p>狀態：${isEmpty ? '空房間' : '使用中 (' + r.members.length + '人)'}</p>
+          <p>管理者：<strong>${r.adminName || '無'}</strong></p>
+          ${btnHtml}
+        </div>
+      `;
+    }
+
+    const roomPanel = document.getElementById('currentRoomPanel');
+    if (myUser.currentRoom) {
+      const curRoom = state.rooms[myUser.currentRoom];
+      roomPanel.classList.remove('hidden');
+      document.getElementById('myStatusDisplay').innerText = `目前位置：${curRoom.name} ${curRoom.adminId === myUser.id ? '(你是管理者)' : ''}`;
+      document.getElementById('currentRoomTitle').innerText = `${curRoom.name} - 管理者：${curRoom.adminName}`;
+      document.getElementById('roomMembersList').innerHTML = curRoom.members.map(m => `<span class="member-tag">${m.name}</span>`).join('');
+    } else {
+      roomPanel.classList.add('hidden');
+      document.getElementById('myStatusDisplay').innerText = '目前位置：大廳';
+    }
+
+    // 渲染所有已註冊會員（含離線會員與配對狀態）
+    const usersDiv = document.getElementById('allUsersList');
+    usersDiv.innerHTML = '';
+    state.allRegisteredUsers.forEach(u => {
+      if (u.name === myUser.name) return;
+      const pairKey = [myUser.name, u.name].sort().join('_');
+      const isPaired = state.confirmedPairs.includes(pairKey);
+      const statusBadge = u.isOnline ? `<span class="badge-online">線上</span>` : `<span class="badge-offline">離線</span>`;
+      const pairBadge = isPaired ? `<span class="badge-paired">✓ 已配對</span>` : '';
+
+      usersDiv.innerHTML += `
+        <div style="margin-bottom:10px; padding-bottom:8px; border-bottom:1px solid #eee;">
+          <span>👤 <strong>${u.name}</strong> ${statusBadge} ${pairBadge}</span>
+          <button class="btn-primary" style="margin-left:10px;" onclick="callUser('${u.name}')">📲 呼叫對方 (手機推播)</button>
+          ${!isPaired ? `<button class="btn-warning" onclick="openPairDialog('${u.name}')">🔑 輸入4位數配對密碼</button>` : ''}
+        </div>
+      `;
+    });
+  });
+
+  function joinRoom(roomId) {
+    socket.emit('requestJoinRoom', roomId);
+  }
+  async function startLocalMedia() {
+    if (localStream) return localStream;
+    try {
+      localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    } catch (err) {
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
+        alert('偵測不到攝影機，將以純語音模式進入房間。');
+      } catch (e) {
+        localStream = new MediaStream();
+        alert('無法取得攝影機或麥克風權限，將以純觀看模式進入。');
+      }
+    }
+    addVideoBox('local', localStream, `${myUser.name} (我)`, true);
+    return localStream;
+  }
+
+  function stopLocalMedia() {
+    if (localStream) {
+      localStream.getTracks().forEach(track => track.stop());
+      localStream = null;
+    }
+    Object.values(peerConnections).forEach(pc => pc.close());
+    peerConnections = {};
+    document.getElementById('videoGrid').innerHTML = '';
+  }
+
+  function addVideoBox(id, stream, labelText, isMuted = false) {
+    if (document.getElementById(`video-wrap-${id}`)) return;
+    const grid = document.getElementById('videoGrid');
+    const wrapper = document.createElement('div');
+    wrapper.className = 'video-wrapper';
+    wrapper.id = `video-wrap-${id}`;
+
+    const video = document.createElement('video');
+    video.srcObject = stream;
+    video.autoplay = true;
+    video.playsInline = true;
+    if (isMuted) video.muted = true;
+
+    const label = document.createElement('div');
+    label.className = 'video-label';
+    label.innerText = labelText;
+
+    wrapper.appendChild(video);
+    wrapper.appendChild(label);
+    grid.appendChild(wrapper);
+  }
+
+  function removeVideoBox(id) {
+    const el = document.getElementById(`video-wrap-${id}`);
+    if (el) el.remove();
+  }
+
+  function createPeerConnection(targetId, targetName) {
+    const pc = new RTCPeerConnection(rtcConfig);
+    peerConnections[targetId] = pc;
+
+    if (localStream) {
+      localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+    }
+
+    pc.onicecandidate = (event) => {
+      if (event.candidate) {
+        socket.emit('webrtcIceCandidate', { targetId, candidate: event.candidate });
+      }
+    };
+
+    pc.ontrack = (event) => {
+      addVideoBox(targetId, event.streams, targetName, false);
+    };
+
+    return pc;
+  }
+
+  socket.on('enteredRoom', async ({ roomId, existingMembers }) => {
+    await startLocalMedia();
+    for (const member of existingMembers) {
+      const pc = createPeerConnection(member.id, member.name);
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      socket.emit('webrtcOffer', { targetId: member.id, offer });
+    }
+  });
+
+  socket.on('webrtcOffer', async ({ senderId, senderName, offer }) => {
+    await startLocalMedia();
+    const pc = createPeerConnection(senderId, senderName);
+    await pc.setRemoteDescription(new RTCSessionDescription(offer));
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    socket.emit('webrtcAnswer', { targetId: senderId, answer });
+  });
+
+  socket.on('webrtcAnswer', async ({ senderId, answer }) => {
+    const pc = peerConnections[senderId];
+    if (pc) {
+      await pc.setRemoteDescription(new RTCSessionDescription(answer));
+    }
+  });
+
+  socket.on('webrtcIceCandidate', async ({ senderId, candidate }) => {
+    const pc = peerConnections[senderId];
+    if (pc) {
+      await pc.addIceCandidate(new RTCIceCandidate(candidate));
+    }
+  });
+
+  socket.on('userLeftVideo', (leftSocketId) => {
+    if (peerConnections[leftSocketId]) {
+      peerConnections[leftSocketId].close();
+      delete peerConnections[leftSocketId];
+    }
+    removeVideoBox(leftSocketId);
+  });
+
+  function toggleMic() {
+    if (!localStream) return;
+    const audioTrack = localStream.getAudioTracks();
+    if (audioTrack) {
+      audioTrack.enabled = !audioTrack.enabled;
+      document.getElementById('toggleMicBtn').innerText = audioTrack.enabled ? '🎤 麥克風：開啟' : '🔇 麥克風：靜音';
+    }
+  }
+
+  function toggleCam() {
+    if (!localStream) return;
+    const videoTrack = localStream.getVideoTracks();
+    if (videoTrack) {
+      videoTrack.enabled = !videoTrack.enabled;
+      document.getElementById('toggleCamBtn').innerText = videoTrack.enabled ? '📷 鏡頭：開啟' : '🚫 鏡頭：關閉';
+    }
+  }
+
+  socket.on('joinRequestToAdmin', ({ roomId, applicantId, applicantName }) => {
+    const approved = confirm(`【進入申請】會員「${applicantName}」想要進入你的房間，是否同意？\n\n按「確定」同意進入，按「取消」拒絕。`);
+    socket.emit('adminDecision', { roomId, applicantId, approved });
+  });
+
+  function initiateLeaveRoom() {
+    const curRoom = latestState.rooms[myUser.currentRoom];
+    if (curRoom.adminId === myUser.id && curRoom.members.length > 1) {
+      const wantAssign = confirm('你是目前房間的管理者，離開前是否要「指定下一位管理員」？\n\n按「確定」選擇指定對象\n按「取消」則由系統自動指派下一位成員');
+      if (wantAssign) {
+        const others = curRoom.members.filter(m => m.id !== myUser.id);
+        let listText = '請輸入要指定為新管理員的編號：\n';
+        others.forEach((m, idx) => { listText += `${idx + 1}. ${m.name}\n`; });
+        const choice = prompt(listText);
+        const chosenMember = others[parseInt(choice) - 1];
+        if (chosenMember) {
+          stopLocalMedia();
+          return socket.emit('leaveRoom', { nextAdminId: chosenMember.id });
+        } else {
+          alert('輸入無效，將由系統自動指派下一位成員。');
+        }
+      }
+    }
+    stopLocalMedia();
+    socket.emit('leaveRoom', { nextAdminId: null });
+  }
+
+  function openPairDialog(targetName) {
+    const pin = prompt(`請輸入與「${targetName}」約定好的【四位數數字密碼】以開啟呼叫權限（雙方輸入相同數字即可完成永久綁定）：`);
+    if (pin && /^\d{4}$/.test(pin)) {
+      socket.emit('setupCallPair', { targetName, pin });
+    } else if (pin !== null) {
+      alert('格式錯誤！請務必輸入 4 位數純數字（例如：1234）。');
+    }
+  }
+
+  function callUser(targetName) {
+    socket.emit('triggerNtfyCall', { targetName });
+  }
+
+  socket.on('requirePairModal', (targetName) => {
+    alert(`你尚未與「${targetName}」完成四位數密碼配對，無法直接呼叫！請先進行密碼設定。`);
+    openPairDialog(targetName);
+  });
+
+  socket.on('pairSuccess', (targetName) => {
+    alert(`🎉 恭喜！你與「${targetName}」的四位數密碼驗證一致，已永久開通彼此的呼叫權限！`);
+  });
+
+  socket.on('notification', (msg) => {
+    alert(msg);
+  });
+</script>
+</body>
+</html>
